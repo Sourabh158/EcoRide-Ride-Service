@@ -1,11 +1,12 @@
 server:
+  # Render's dynamic port detection
   port: ${PORT:8082}
 
 spring:
   application:
     name: ride-service
   datasource:
-    # Local pe 'localhost' aur Cloud pe Railway ka URL auto-pick hoga
+    # Cloud (Railway/Render) and Local fallback
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/ecoride_ride_db}
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
     password: ${SPRING_DATASOURCE_PASSWORD:sourabh@2003}
@@ -30,8 +31,13 @@ feign:
 
 eureka:
   instance:
-    prefer-ip-address: true
+    # Render environment needs hostname-based discovery
+    prefer-ip-address: false
+    hostname: ecoride-ride-service.onrender.com
+    non-secure-port: ${server.port}
   client:
     service-url:
-      # Local/Docker registry fallback ke saath
-      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/}
+      # Use the live Cloud Eureka URL
+      defaultZone: ${EUREKA_SERVER_URL:https://service-registry-qhsy.onrender.com/eureka/}
+    register-with-eureka: true
+    fetch-registry: true
