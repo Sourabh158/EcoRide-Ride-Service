@@ -57,28 +57,39 @@ public class RideController {
             return "Error: User not found!";
         }
 
-        // --- DYNAMIC FARE LOGIC USING OSRM ---
-        double actualDistance = distanceService.calculateDistance(
-                ride.getSourceLat(), ride.getSourceLng(),
-                ride.getDestinationLat(), ride.getDestinationLng()
-        );
+        // --- DYNAMIC FARE LOGIC WITH FALLBACK ---
+        double actualDistance;
+        try {
+            actualDistance = distanceService.calculateDistance(
+                    ride.getSourceLat(), ride.getSourceLng(),
+                    ride.getDestinationLat(), ride.getDestinationLng()
+            );
+        } catch (Exception e) {
+            // Agar OSRM server down ho toh booking fail nahi hogi
+            System.err.println("OSRM Error: " + e.getMessage());
+            actualDistance = 5.0; // Default fallback distance
+        }
 
-        double ratePerKm = 12.0; // Per km rate
+        double ratePerKm = 12.0;
         ride.setDistanceInKm(actualDistance);
         ride.setFare(actualDistance * ratePerKm);
-
         ride.setRiderId(actualRiderId);
         ride.setRiderEmail(email);
         ride.setStatus("REQUESTED");
+
         rideRepository.save(ride);
 
-        // TRIGGER PROFESSIONAL EMAIL
-        String message = String.format("From: %s To: %s | Distance: %.2f km | Total Fare: ₹%.2f",
-                ride.getSource(), ride.getDestination(), actualDistance, ride.getFare());
+        // --- EMAIL TRIGGER WITH TRY-CATCH (Crucial Fix) ---
+        try {
+            String message = String.format("From: %s To: %s | Distance: %.2f km | Total Fare: ₹%.2f",
+                    ride.getSource(), ride.getDestination(), actualDistance, ride.getFare());
+            notificationClient.sendUpdate(email, message);
+        } catch (Exception e) {
+            // Email fail hone par bhi rider ko success message milega
+            System.err.println("Email Notification Failed but ride is booked: " + e.getMessage());
+        }
 
-        notificationClient.sendUpdate(email, message);
-
-        return String.format("Ride Booked! Distance: %.2f km. Total Fare: ₹%.2f. Confirmation email sent.",
+        return String.format("Ride Booked! Distance: %.2f km. Total Fare: ₹%.2f.",
                 actualDistance, ride.getFare());
     }
 

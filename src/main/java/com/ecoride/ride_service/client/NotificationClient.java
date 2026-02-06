@@ -6,7 +6,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 // 1. "name" mein underscore (_) mat use karo, sirf hyphen (-) use karo
 // 2. "url" ko ekdum clean rakho
-@FeignClient(name = "notification-service")
+@FeignClient(name = "notification-service", url = "https://ecoride-deploy-notification.onrender.com")
 public interface NotificationClient {
 
     @PostMapping("/notifications/send-update")
