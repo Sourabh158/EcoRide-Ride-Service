@@ -44,66 +44,59 @@ public class RideController {
     @Transactional
     @PostMapping("/book")
     public String bookRide(@RequestHeader("loggedInUser") String email, @RequestBody Ride ride) {
-        System.out.println("DEBUG 1: Booking request received for email: " + email); //
+        // Step 1: Normalize email to avoid 404 mismatch
+        String normalizedEmail = email.trim().toLowerCase();
+        System.out.println("DEBUG 1: Booking request for email: " + normalizedEmail);
 
         try {
-            List<Ride> activeRides = rideRepository.findByRiderEmail(email);
-            System.out.println("DEBUG 2: Active rides found: " + activeRides.size()); //
-
+            // Step 2: Check for active rides
+            List<Ride> activeRides = rideRepository.findByRiderEmail(normalizedEmail);
             boolean hasActiveRide = activeRides.stream()
                     .anyMatch(r -> "REQUESTED".equals(r.getStatus()) || "ACCEPTED".equals(r.getStatus()));
 
             if (hasActiveRide) {
-                System.out.println("DEBUG 3: Active ride exists, blocking booking."); //
                 return "Error: You already have an active ride request!";
             }
 
-            System.out.println("DEBUG 4: Calling User Service for email: " + email); //
-            Long actualRiderId = userClient.getUserIdByEmail(email);
+            // Step 3: Call User Service to get ID
+            System.out.println("DEBUG 2: Calling User Service for: " + normalizedEmail);
+            Long actualRiderId = userClient.getUserIdByEmail(normalizedEmail);
 
             if (actualRiderId == null) {
-                System.out.println("DEBUG 5: User Service returned NULL Rider ID!"); //
-                return "Error: User profile not found in database!";
+                System.out.println("DEBUG 3: Rider ID NOT FOUND in User Service");
+                return "Error: User ID not found. Make sure you are registered!";
             }
-            System.out.println("DEBUG 6: Rider ID found: " + actualRiderId); //
+            System.out.println("DEBUG 4: Rider ID found: " + actualRiderId);
 
-            System.out.println("DEBUG 7: Calculating distance via OSRM..."); //
-            double actualDistance;
-            try {
-                actualDistance = distanceService.calculateDistance(
-                        ride.getSourceLat(), ride.getSourceLng(),
-                        ride.getDestinationLat(), ride.getDestinationLng()
-                );
-                System.out.println("DEBUG 8: Distance calculated: " + actualDistance); //
-            } catch (Exception e) {
-                System.out.println("DEBUG 9: OSRM Failed, using fallback. Error: " + e.getMessage()); //
-                actualDistance = 5.0;
-            }
+            // Step 4: Distance calculation
+            double distance = distanceService.calculateDistance(
+                    ride.getSourceLat(), ride.getSourceLng(),
+                    ride.getDestinationLat(), ride.getDestinationLng()
+            );
 
-            ride.setDistanceInKm(actualDistance);
-            ride.setFare(actualDistance * 12.0);
+            // Step 5: Final ride setup
             ride.setRiderId(actualRiderId);
-            ride.setRiderEmail(email);
+            ride.setRiderEmail(normalizedEmail);
+            ride.setDistanceInKm(distance);
+            ride.setFare(distance * 12.0); // Simple fare logic
             ride.setStatus("REQUESTED");
 
-            System.out.println("DEBUG 10: Saving ride to database..."); //
             rideRepository.save(ride);
-            System.out.println("DEBUG 11: Ride saved successfully!"); //
+            System.out.println("DEBUG 5: Ride saved in DB with status REQUESTED");
 
+            // Step 6: Async notification
             try {
-                System.out.println("DEBUG 12: Sending notification email..."); //
-                notificationClient.sendUpdate(email, "Ride Booked!");
-                System.out.println("DEBUG 13: Notification sent!"); //
+                notificationClient.sendUpdate(normalizedEmail, "Ride request sent! Waiting for driver.");
             } catch (Exception e) {
-                System.out.println("DEBUG 14: Notification failed (Non-critical): " + e.getMessage()); //
+                System.out.println("WARN: Email notification failed, but ride is booked.");
             }
 
             return "Ride Booked! Fare: ₹" + ride.getFare();
 
         } catch (Exception e) {
-            System.out.println("CRITICAL ERROR in bookRide: " + e.getMessage()); //
-            e.printStackTrace(); // Ye pura error stack trace dikhayega console mein
-            return "Internal Server Error: " + e.getMessage();
+            System.out.println("CRITICAL ERROR: " + e.getMessage());
+            e.printStackTrace();
+            return "Server Error: " + e.getMessage();
         }
     }
 
