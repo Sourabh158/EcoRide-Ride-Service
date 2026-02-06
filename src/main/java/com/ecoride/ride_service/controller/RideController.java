@@ -161,27 +161,28 @@ public class RideController {
         );
     }
 
+    // RideController.java mein acceptRide ko modify karein
     @PutMapping("/{id}/accept")
     public String acceptRide(@PathVariable Long id, @RequestParam Long driverId) {
         return rideRepository.findById(id).map(ride -> {
-            // ... (Status check purana wala) ...
+            if (!"REQUESTED".equals(ride.getStatus())) {
+                return "Error: Ride is no longer available!";
+            }
 
-            // 1. User-Service se Driver details lo
             UserDTO driver = userClient.getUserById(driverId);
-
-            // 2. CHECK: Kya driver approved hai?
-            if (driver == null || !"DRIVER".equalsIgnoreCase(driver.getRole())) {
-                return "Error: Driver not found!";
+            if (driver == null || !driver.isApproved()) {
+                return "Error: Driver not approved!";
             }
 
-            if (!driver.isApproved()) { // Ye driver ko rokega
-                return "Error: Your account is pending Admin Approval. Please wait for verification.";
-            }
+            ride.setDriverId(driverId);
+            ride.setStatus("ACCEPTED"); // Status update zaroori hai
+            rideRepository.save(ride);
 
-            // ... (Baki acceptance logic aur Notification) ...
-            return "Ride Accepted by " + driver.getName();
+            notificationClient.sendUpdate(ride.getRiderEmail(), "Your ride has been accepted by " + driver.getName());
+            return "Ride Accepted Successfully!";
         }).orElse("Error: Ride not found!");
     }
+
     @GetMapping("/available")
     public List<Ride> getAvailableRides() {
         return rideRepository.findByStatus("REQUESTED");
