@@ -145,6 +145,22 @@ public class RideController {
         }).orElse("Error: Ride not found!");
     }
 
+    // RideController.java mein add karein
+    @GetMapping("/admin/stats")
+    public Map<String, Object> getAdminStats() {
+        List<Ride> allRides = rideRepository.findAll();
+        double totalRevenue = allRides.stream()
+                .filter(r -> "COMPLETED_AND_PAID".equals(r.getStatus()))
+                .mapToDouble(Ride::getFare)
+                .sum();
+
+        return Map.of(
+                "totalRides", allRides.size(),
+                "totalRevenue", totalRevenue,
+                "recentTrips", rideRepository.findAll().stream().limit(10).toList()
+        );
+    }
+
     @PutMapping("/{id}/accept")
     public String acceptRide(@PathVariable Long id, @RequestParam Long driverId) {
         return rideRepository.findById(id).map(ride -> {
