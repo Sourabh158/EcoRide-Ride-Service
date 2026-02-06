@@ -44,53 +44,67 @@ public class RideController {
     @Transactional
     @PostMapping("/book")
     public String bookRide(@RequestHeader("loggedInUser") String email, @RequestBody Ride ride) {
-        List<Ride> activeRides = rideRepository.findByRiderEmail(email);
-        boolean hasActiveRide = activeRides.stream()
-                .anyMatch(r -> "REQUESTED".equals(r.getStatus()) || "ACCEPTED".equals(r.getStatus()));
+        System.out.println("DEBUG 1: Booking request received for email: " + email); //
 
-        if (hasActiveRide) {
-            return "Error: You already have an active ride request!";
-        }
-
-        Long actualRiderId = userClient.getUserIdByEmail(email);
-        if (actualRiderId == null) {
-            return "Error: User not found!";
-        }
-
-        // --- DYNAMIC FARE LOGIC WITH FALLBACK ---
-        double actualDistance;
         try {
-            actualDistance = distanceService.calculateDistance(
-                    ride.getSourceLat(), ride.getSourceLng(),
-                    ride.getDestinationLat(), ride.getDestinationLng()
-            );
+            List<Ride> activeRides = rideRepository.findByRiderEmail(email);
+            System.out.println("DEBUG 2: Active rides found: " + activeRides.size()); //
+
+            boolean hasActiveRide = activeRides.stream()
+                    .anyMatch(r -> "REQUESTED".equals(r.getStatus()) || "ACCEPTED".equals(r.getStatus()));
+
+            if (hasActiveRide) {
+                System.out.println("DEBUG 3: Active ride exists, blocking booking."); //
+                return "Error: You already have an active ride request!";
+            }
+
+            System.out.println("DEBUG 4: Calling User Service for email: " + email); //
+            Long actualRiderId = userClient.getUserIdByEmail(email);
+
+            if (actualRiderId == null) {
+                System.out.println("DEBUG 5: User Service returned NULL Rider ID!"); //
+                return "Error: User profile not found in database!";
+            }
+            System.out.println("DEBUG 6: Rider ID found: " + actualRiderId); //
+
+            System.out.println("DEBUG 7: Calculating distance via OSRM..."); //
+            double actualDistance;
+            try {
+                actualDistance = distanceService.calculateDistance(
+                        ride.getSourceLat(), ride.getSourceLng(),
+                        ride.getDestinationLat(), ride.getDestinationLng()
+                );
+                System.out.println("DEBUG 8: Distance calculated: " + actualDistance); //
+            } catch (Exception e) {
+                System.out.println("DEBUG 9: OSRM Failed, using fallback. Error: " + e.getMessage()); //
+                actualDistance = 5.0;
+            }
+
+            ride.setDistanceInKm(actualDistance);
+            ride.setFare(actualDistance * 12.0);
+            ride.setRiderId(actualRiderId);
+            ride.setRiderEmail(email);
+            ride.setStatus("REQUESTED");
+
+            System.out.println("DEBUG 10: Saving ride to database..."); //
+            rideRepository.save(ride);
+            System.out.println("DEBUG 11: Ride saved successfully!"); //
+
+            try {
+                System.out.println("DEBUG 12: Sending notification email..."); //
+                notificationClient.sendUpdate(email, "Ride Booked!");
+                System.out.println("DEBUG 13: Notification sent!"); //
+            } catch (Exception e) {
+                System.out.println("DEBUG 14: Notification failed (Non-critical): " + e.getMessage()); //
+            }
+
+            return "Ride Booked! Fare: ₹" + ride.getFare();
+
         } catch (Exception e) {
-            // Agar OSRM server down ho toh booking fail nahi hogi
-            System.err.println("OSRM Error: " + e.getMessage());
-            actualDistance = 5.0; // Default fallback distance
+            System.out.println("CRITICAL ERROR in bookRide: " + e.getMessage()); //
+            e.printStackTrace(); // Ye pura error stack trace dikhayega console mein
+            return "Internal Server Error: " + e.getMessage();
         }
-
-        double ratePerKm = 12.0;
-        ride.setDistanceInKm(actualDistance);
-        ride.setFare(actualDistance * ratePerKm);
-        ride.setRiderId(actualRiderId);
-        ride.setRiderEmail(email);
-        ride.setStatus("REQUESTED");
-
-        rideRepository.save(ride);
-
-        // --- EMAIL TRIGGER WITH TRY-CATCH (Crucial Fix) ---
-        try {
-            String message = String.format("From: %s To: %s | Distance: %.2f km | Total Fare: ₹%.2f",
-                    ride.getSource(), ride.getDestination(), actualDistance, ride.getFare());
-            notificationClient.sendUpdate(email, message);
-        } catch (Exception e) {
-            // Email fail hone par bhi rider ko success message milega
-            System.err.println("Email Notification Failed but ride is booked: " + e.getMessage());
-        }
-
-        return String.format("Ride Booked! Distance: %.2f km. Total Fare: ₹%.2f.",
-                actualDistance, ride.getFare());
     }
 
     @GetMapping("/driver-history/{driverId}")
