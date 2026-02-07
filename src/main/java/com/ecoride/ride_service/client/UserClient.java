@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 // "user-service" wahi naam hai jo humne User-Service ki application.yml mein diya tha
-@FeignClient(name = "user-service", url = "https://ecoride-user-service.onrender.com")
+@FeignClient(name = "user-service", url = "https://ecoride-deploy-user.onrender.com")
 public interface UserClient {
 
     @GetMapping("/users/get-id")
