@@ -183,22 +183,45 @@ public class RideController {
     @PutMapping("/{id}/accept")
     public String acceptRide(@PathVariable Long id, @RequestParam Long driverId) {
         return rideRepository.findById(id).map(ride -> {
-            if (!"REQUESTED".equals(ride.getStatus())) {
-                return "Error: Ride is no longer available!";
+            try {
+                // 1. Check karo ki ride abhi bhi available hai ya nahi
+                if (!"REQUESTED".equals(ride.getStatus())) {
+                    return "Error: Ride is already accepted or no longer available!";
+                }
+
+                // 2. Feign call ko safe rakho (User Service connectivity check)
+                UserDTO driver;
+                try {
+                    driver = userClient.getUserById(driverId);
+                } catch (Exception feignException) {
+                    System.out.println("CRITICAL: User-Service call failed: " + feignException.getMessage());
+                    return "Error: Could not verify driver profile. Please try again later.";
+                }
+
+                // 3. Driver validation
+                if (driver == null || !Boolean.TRUE.equals(driver.isApproved())) {
+                    return "Error: Driver profile not found or your account is not approved by admin!";
+                }
+
+                // 4. Update and Save (Atomic operation)
+                ride.setDriverId(driverId);
+                ride.setStatus("ACCEPTED");
+                rideRepository.save(ride);
+
+                // 5. Notification (Optional error handling)
+                try {
+                    notificationClient.sendUpdate(ride.getRiderEmail(),
+                            "Good news! Your ride has been accepted by " + driver.getName());
+                } catch (Exception e) {
+                    System.out.println("WARN: Could not send rider notification, but ride is accepted.");
+                }
+
+                return "Ride Accepted Successfully! Start moving towards pickup.";
+
+            } catch (Exception e) {
+                return "Server Error: Unexpected error occurred. " + e.getMessage();
             }
-
-            UserDTO driver = userClient.getUserById(driverId);
-            if (driver == null || !driver.isApproved()) {
-                return "Error: Driver not approved!";
-            }
-
-            ride.setDriverId(driverId);
-            ride.setStatus("ACCEPTED"); // Status update zaroori hai
-            rideRepository.save(ride);
-
-            notificationClient.sendUpdate(ride.getRiderEmail(), "Your ride has been accepted by " + driver.getName());
-            return "Ride Accepted Successfully!";
-        }).orElse("Error: Ride not found!");
+        }).orElse("Error: Ride ID " + id + " not found!");
     }
 
     @GetMapping("/available")
