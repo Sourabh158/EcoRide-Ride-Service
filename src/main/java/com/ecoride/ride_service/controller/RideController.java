@@ -132,12 +132,11 @@ public class RideController {
     public String completeRide(@PathVariable Long id) {
         return rideRepository.findById(id).map(ride -> {
             try {
-                // Check if already completed to avoid multiple orders
                 if ("COMPLETED".equalsIgnoreCase(ride.getStatus())) {
                     return "Ride already completed!";
                 }
 
-                // 1. Razorpay Order Creation
+                // 1. Razorpay Order logic (Same as before)
                 JSONObject orderRequest = new JSONObject();
                 orderRequest.put("amount", (int)(ride.getFare() * 100));
                 orderRequest.put("currency", "INR");
@@ -146,15 +145,19 @@ public class RideController {
                 Order order = razorpayClient.orders.create(orderRequest);
                 String orderId = order.get("id");
 
-                // 2. IMPORTANT: Save Order ID in Database
                 ride.setRazorpayOrderId(orderId);
                 ride.setStatus("COMPLETED");
                 rideRepository.save(ride);
 
-                // 3. Notification with Order ID
-                String paymentMsg = "Your ride is complete! Total: ₹" + ride.getFare() +
-                        ". Please pay using Order ID: " + orderId;
-                notificationClient.sendUpdate(ride.getRiderEmail(), paymentMsg);
+                // --- ZARURI CHANGE: Notification call ko safe banao ---
+                try {
+                    String paymentMsg = "Your ride is complete! Total: ₹" + ride.getFare() +
+                            ". Please pay using Order ID: " + orderId;
+                    notificationClient.sendUpdate(ride.getRiderEmail(), paymentMsg);
+                } catch (Exception e) {
+                    // Agar notification service down hai toh sirf log karo, error mat throw karo
+                    System.out.println("WARN: Notification failed but ride marked COMPLETED: " + e.getMessage());
+                }
 
                 return "Ride Completed! Razorpay Order Created: " + orderId;
             } catch (Exception e) {
